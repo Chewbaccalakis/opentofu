@@ -1,5 +1,5 @@
 variable "hypervisors" {
-  description = "Per-hypervisor configuration. Keys become provider aliases (hv2, hv3, ...)."
+  description = "Per-hypervisor configuration. Keys must match provider aliases in providers.tf (e.g. hv2, hv3)."
   type = map(object({
     api_url   = string
     node_name = string
@@ -25,10 +25,29 @@ variable "network_subnets" {
   default     = {}
 }
 
+variable "ansible_user" {
+  description = "User created on each managed host for Ansible access."
+  type        = string
+}
+
+variable "ssh_key" {
+  description = "SSH public key injected into all managed hosts."
+  type        = string
+}
+
+variable "search_domain" {
+  description = "DNS search domain set on all managed hosts."
+  type        = string
+}
+
+variable "dns_nameservers" {
+  description = "DNS nameserver(s) set on all managed hosts."
+  type        = string
+}
+
 variable "ansible_ssh_private_key_file" {
   description = "Path to the SSH private key written into the generated Ansible inventory."
   type        = string
-  default     = "~/.ssh/ansible"
 }
 
 variable "ansible_inventory_path" {
@@ -37,204 +56,48 @@ variable "ansible_inventory_path" {
   default     = "../ansible/inventories/generated.yml"
 }
 
-# ── LXC variables ─────────────────────────────────────────────────────────────
-
-variable "hv2_lxc" {
+# LXC and VM definitions per hypervisor, keyed by the same names used in
+# hypervisors and providers.tf. Both lxc and machines default to {} so a node
+# can be declared with only one type of workload.
+variable "nodes" {
   type = map(object({
-    hostname     = string
-    vmid         = number
-    template     = string
-    unprivileged = bool
-    onboot       = bool
-    tags         = string
-    memory       = number
-    disk_size    = string
-    nic_name     = string
-    bridge       = string
-    ip           = string
-    gw           = string
+    lxc = optional(map(object({
+      hostname     = string
+      vmid         = number
+      template     = string
+      unprivileged = bool
+      onboot       = bool
+      tags         = string
+      memory       = number
+      disk_size    = string
+      nic_name     = string
+      bridge       = string
+      ip           = string
+      gw           = string
+    })), {})
+    machines = optional(map(object({
+      hostname   = string
+      vmid       = number
+      ip         = string
+      ip2        = optional(string, null)
+      vlan       = optional(number, 0)
+      template   = string
+      full_clone = bool
+      onboot     = bool
+      ciupgrade  = optional(string, "false")
+      tags       = string
+      agent      = number
+      memory     = number
+      disk_size  = optional(string, "32")
+      balloon    = number
+      cpu_type   = string
+      cores      = number
+      sockets    = number
+      vcpus      = number
+      bios       = string
+      machine    = string
+      bridge     = string
+    })), {})
   }))
   default = {}
-}
-
-variable "hv3_lxc" {
-  type = map(object({
-    hostname     = string
-    vmid         = number
-    template     = string
-    unprivileged = bool
-    onboot       = bool
-    tags         = string
-    memory       = number
-    disk_size    = string
-    nic_name     = string
-    bridge       = string
-    ip           = string
-    gw           = string
-  }))
-  default = {}
-}
-
-variable "hv4_lxc" {
-  type = map(object({
-    hostname     = string
-    vmid         = number
-    template     = string
-    unprivileged = bool
-    onboot       = bool
-    tags         = string
-    memory       = number
-    disk_size    = string
-    nic_name     = string
-    bridge       = string
-    ip           = string
-    gw           = string
-  }))
-  default = {}
-}
-
-variable "hv5_lxc" {
-  type = map(object({
-    hostname     = string
-    vmid         = number
-    template     = string
-    unprivileged = bool
-    onboot       = bool
-    tags         = string
-    memory       = number
-    disk_size    = string
-    nic_name     = string
-    bridge       = string
-    ip           = string
-    gw           = string
-  }))
-  default = {}
-}
-
-# ── VM variables ───────────────────────────────────────────────────────────────
-
-variable "hv2_machines" {
-  type = map(object({
-    hostname   = string
-    vmid       = number
-    ip         = string
-    ip2        = optional(string, null)
-    vlan       = optional(number, 0)
-    template   = string
-    full_clone = bool
-    onboot     = bool
-    ciupgrade  = optional(string, "false")
-    tags       = string
-    agent      = number
-    memory     = number
-    disk_size  = optional(string, "32")
-    balloon    = number
-    cpu_type   = string
-    cores      = number
-    sockets    = number
-    vcpus      = number
-    bios       = string
-    machine    = string
-    bridge     = string
-  }))
-  default = {}
-}
-
-variable "hv3_machines" {
-  type = map(object({
-    hostname   = string
-    vmid       = number
-    ip         = string
-    ip2        = optional(string, null)
-    vlan       = optional(number, 0)
-    template   = string
-    full_clone = bool
-    onboot     = bool
-    ciupgrade  = optional(string, "false")
-    tags       = string
-    agent      = number
-    memory     = number
-    disk_size  = optional(string, "32")
-    balloon    = number
-    cpu_type   = string
-    cores      = number
-    sockets    = number
-    vcpus      = number
-    bios       = string
-    machine    = string
-    bridge     = string
-  }))
-  default = {}
-}
-
-variable "hv4_machines" {
-  type = map(object({
-    hostname   = string
-    vmid       = number
-    ip         = string
-    ip2        = optional(string, null)
-    vlan       = optional(number, 0)
-    template   = string
-    full_clone = bool
-    onboot     = bool
-    ciupgrade  = optional(string, "false")
-    tags       = string
-    agent      = number
-    memory     = number
-    disk_size  = optional(string, "32")
-    balloon    = number
-    cpu_type   = string
-    cores      = number
-    sockets    = number
-    vcpus      = number
-    bios       = string
-    machine    = string
-    bridge     = string
-  }))
-  default = {}
-}
-
-variable "hv5_machines" {
-  type = map(object({
-    hostname   = string
-    vmid       = number
-    ip         = string
-    ip2        = optional(string, null)
-    vlan       = optional(number, 0)
-    template   = string
-    full_clone = bool
-    onboot     = bool
-    ciupgrade  = optional(string, "false")
-    tags       = string
-    agent      = number
-    memory     = number
-    disk_size  = optional(string, "32")
-    balloon    = number
-    cpu_type   = string
-    cores      = number
-    sockets    = number
-    vcpus      = number
-    bios       = string
-    machine    = string
-    bridge     = string
-  }))
-  default = {}
-}
-
-# ── Common variables ───────────────────────────────────────────────────────────
-
-variable "ansible_user" {
-  default = "ansible"
-}
-
-variable "ssh_key" {
-  default = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKuUu/BzgmmWJ64zb1moGJ+SR9D9iqGShruze/zFnwUE root@ansible"
-}
-
-variable "search_domain" {
-  default = "trochalakis.com"
-}
-
-variable "dns_nameservers" {
-  default = "1.1.1.1"
 }

@@ -1,5 +1,3 @@
-# Subnet IDs are only fetched when IPAM is enabled. The for_each key becomes
-# the name used to look up IDs in local.subnets.
 data "phpipam_subnet" "subnets" {
   for_each = var.enable_ipam ? var.network_subnets : {}
 
@@ -8,27 +6,42 @@ data "phpipam_subnet" "subnets" {
 }
 
 locals {
-  # Map of CIDR → phpipam subnet_id, empty when IPAM is disabled.
   subnets = var.enable_ipam ? {
     for name, cidr in var.network_subnets :
     cidr => data.phpipam_subnet.subnets[name].subnet_id
   } : {}
+
+  # Shared inputs passed to every proxmox_node module call.
+  node_common = {
+    enable_ipam     = var.enable_ipam
+    subnets         = local.subnets
+    search_domain   = var.search_domain
+    dns_nameservers = var.dns_nameservers
+    ssh_key         = var.ssh_key
+    ansible_user    = var.ansible_user
+    lxc_password    = data.external.infisical.result["lxc_password"]
+  }
 }
+
+# Provider aliases must be statically declared, so each hypervisor needs its
+# own module block. To add or remove a hypervisor, add/remove the corresponding
+# provider alias in providers.tf and a module block here. Everything else
+# (node contents, common config) lives in the parent repo's terraform.tfvars.
 
 module "hv2" {
   source = "./modules/proxmox_node"
 
   node_name       = var.hypervisors["hv2"].node_name
   storage         = var.hypervisors["hv2"].storage
-  enable_ipam     = var.enable_ipam
-  lxc             = var.hv2_lxc
-  machines        = var.hv2_machines
-  subnets         = local.subnets
-  search_domain   = var.search_domain
-  dns_nameservers = var.dns_nameservers
-  ssh_key         = var.ssh_key
-  ansible_user    = var.ansible_user
-  lxc_password    = data.external.infisical.result["lxc_password"]
+  lxc             = try(var.nodes["hv2"].lxc, {})
+  machines        = try(var.nodes["hv2"].machines, {})
+  enable_ipam     = local.node_common.enable_ipam
+  subnets         = local.node_common.subnets
+  search_domain   = local.node_common.search_domain
+  dns_nameservers = local.node_common.dns_nameservers
+  ssh_key         = local.node_common.ssh_key
+  ansible_user    = local.node_common.ansible_user
+  lxc_password    = local.node_common.lxc_password
 
   providers = {
     proxmox = proxmox.hv2
@@ -41,15 +54,15 @@ module "hv3" {
 
   node_name       = var.hypervisors["hv3"].node_name
   storage         = var.hypervisors["hv3"].storage
-  enable_ipam     = var.enable_ipam
-  lxc             = var.hv3_lxc
-  machines        = var.hv3_machines
-  subnets         = local.subnets
-  search_domain   = var.search_domain
-  dns_nameservers = var.dns_nameservers
-  ssh_key         = var.ssh_key
-  ansible_user    = var.ansible_user
-  lxc_password    = data.external.infisical.result["lxc_password"]
+  lxc             = try(var.nodes["hv3"].lxc, {})
+  machines        = try(var.nodes["hv3"].machines, {})
+  enable_ipam     = local.node_common.enable_ipam
+  subnets         = local.node_common.subnets
+  search_domain   = local.node_common.search_domain
+  dns_nameservers = local.node_common.dns_nameservers
+  ssh_key         = local.node_common.ssh_key
+  ansible_user    = local.node_common.ansible_user
+  lxc_password    = local.node_common.lxc_password
 
   providers = {
     proxmox = proxmox.hv3
@@ -62,15 +75,15 @@ module "hv4" {
 
   node_name       = var.hypervisors["hv4"].node_name
   storage         = var.hypervisors["hv4"].storage
-  enable_ipam     = var.enable_ipam
-  lxc             = var.hv4_lxc
-  machines        = var.hv4_machines
-  subnets         = local.subnets
-  search_domain   = var.search_domain
-  dns_nameservers = var.dns_nameservers
-  ssh_key         = var.ssh_key
-  ansible_user    = var.ansible_user
-  lxc_password    = data.external.infisical.result["lxc_password"]
+  lxc             = try(var.nodes["hv4"].lxc, {})
+  machines        = try(var.nodes["hv4"].machines, {})
+  enable_ipam     = local.node_common.enable_ipam
+  subnets         = local.node_common.subnets
+  search_domain   = local.node_common.search_domain
+  dns_nameservers = local.node_common.dns_nameservers
+  ssh_key         = local.node_common.ssh_key
+  ansible_user    = local.node_common.ansible_user
+  lxc_password    = local.node_common.lxc_password
 
   providers = {
     proxmox = proxmox.hv4
@@ -83,15 +96,15 @@ module "hv5" {
 
   node_name       = var.hypervisors["hv5"].node_name
   storage         = var.hypervisors["hv5"].storage
-  enable_ipam     = var.enable_ipam
-  lxc             = var.hv5_lxc
-  machines        = var.hv5_machines
-  subnets         = local.subnets
-  search_domain   = var.search_domain
-  dns_nameservers = var.dns_nameservers
-  ssh_key         = var.ssh_key
-  ansible_user    = var.ansible_user
-  lxc_password    = data.external.infisical.result["lxc_password"]
+  lxc             = try(var.nodes["hv5"].lxc, {})
+  machines        = try(var.nodes["hv5"].machines, {})
+  enable_ipam     = local.node_common.enable_ipam
+  subnets         = local.node_common.subnets
+  search_domain   = local.node_common.search_domain
+  dns_nameservers = local.node_common.dns_nameservers
+  ssh_key         = local.node_common.ssh_key
+  ansible_user    = local.node_common.ansible_user
+  lxc_password    = local.node_common.lxc_password
 
   providers = {
     proxmox = proxmox.hv5
@@ -100,7 +113,6 @@ module "hv5" {
 }
 
 locals {
-  # Single map consumed by both tag_groups and the inventory template.
   hv_hosts = {
     hv2 = { lxc = module.hv2.lxc_hosts, vm = module.hv2.vm_hosts }
     hv3 = { lxc = module.hv3.lxc_hosts, vm = module.hv3.vm_hosts }
