@@ -134,7 +134,7 @@ locals {
 }
 
 resource "local_file" "ansible_inventory" {
-  filename = "${path.module}/../ansible/inventories/generated.yml"
+  filename = "${path.module}/${var.ansible_inventory_path}"
   content  = templatefile("${path.module}/inventory.tpl", {
     hypervisors                  = local.hv_hosts
     tag_groups                   = local.tag_groups

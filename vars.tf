@@ -31,6 +31,12 @@ variable "ansible_ssh_private_key_file" {
   default     = "~/.ssh/ansible"
 }
 
+variable "ansible_inventory_path" {
+  description = "Path where the generated Ansible inventory file is written. Defaults to ../ansible/inventories/generated.yml relative to this module, which points to the parent repo when used as a git submodule."
+  type        = string
+  default     = "../ansible/inventories/generated.yml"
+}
+
 # ── LXC variables ─────────────────────────────────────────────────────────────
 
 variable "hv2_lxc" {
