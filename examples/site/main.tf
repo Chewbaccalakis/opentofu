@@ -29,7 +29,7 @@ locals {
 # (node contents, common config) lives in the parent repo's terraform.tfvars.
 
 module "hv2" {
-  source = "./modules/proxmox_node"
+  source = "./opentofu/modules/proxmox_node"
 
   node_name       = var.hypervisors["hv2"].node_name
   storage         = var.hypervisors["hv2"].storage
@@ -50,7 +50,7 @@ module "hv2" {
 }
 
 module "hv3" {
-  source = "./modules/proxmox_node"
+  source = "./opentofu/modules/proxmox_node"
 
   node_name       = var.hypervisors["hv3"].node_name
   storage         = var.hypervisors["hv3"].storage
@@ -71,7 +71,7 @@ module "hv3" {
 }
 
 module "hv4" {
-  source = "./modules/proxmox_node"
+  source = "./opentofu/modules/proxmox_node"
 
   node_name       = var.hypervisors["hv4"].node_name
   storage         = var.hypervisors["hv4"].storage
@@ -92,7 +92,7 @@ module "hv4" {
 }
 
 module "hv5" {
-  source = "./modules/proxmox_node"
+  source = "./opentofu/modules/proxmox_node"
 
   node_name       = var.hypervisors["hv5"].node_name
   storage         = var.hypervisors["hv5"].storage
@@ -147,7 +147,7 @@ locals {
 
 resource "local_file" "ansible_inventory" {
   filename = "${path.module}/${var.ansible_inventory_path}"
-  content  = templatefile("${path.module}/inventory.tpl", {
+  content  = templatefile("${path.module}/opentofu/inventory.tpl", {
     hypervisors                  = local.hv_hosts
     tag_groups                   = local.tag_groups
     ansible_user                 = var.ansible_user
