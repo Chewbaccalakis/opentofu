@@ -1,52 +1,3 @@
-locals {
-  # Derive the /24 host-prefix (e.g. "192.168.5.") from each configured CIDR
-  # so IP matching works for any subnets set in tfvars, not hardcoded octets.
-  subnet_prefixes = {
-    for cidr, id in var.subnets :
-    "${join(".", slice(split(".", split("/", cidr)[0]), 0, 3))}." => id
-  }
-
-  lxc_subnet_id = {
-    for key, val in var.lxc : key => try([
-      for prefix, id in local.subnet_prefixes :
-      id if startswith(split("/", val.ip)[0], prefix)
-    ][0], null)
-  }
-
-  vm_subnet_id = {
-    for key, val in var.machines : key => try([
-      for prefix, id in local.subnet_prefixes :
-      id if startswith(val.ip, prefix)
-    ][0], null)
-  }
-}
-
-resource "phpipam_address" "lxc" {
-  for_each = var.enable_ipam ? var.lxc : {}
-
-  subnet_id   = local.lxc_subnet_id[each.key]
-  ip_address  = split("/", each.value.ip)[0]
-  hostname    = each.value.hostname
-  description = "Managed by Terraform (${var.node_name} LXC)"
-
-  lifecycle {
-    ignore_changes = [subnet_id, ip_address]
-  }
-}
-
-resource "phpipam_address" "vm" {
-  for_each = var.enable_ipam ? var.machines : {}
-
-  subnet_id   = local.vm_subnet_id[each.key]
-  ip_address  = each.value.ip
-  hostname    = each.value.hostname
-  description = "Managed by Terraform (${var.node_name} VM)"
-
-  lifecycle {
-    ignore_changes = [subnet_id, ip_address]
-  }
-}
-
 resource "proxmox_lxc" "container" {
   for_each = var.lxc
 
@@ -78,6 +29,10 @@ resource "proxmox_lxc" "container" {
     bridge = each.value.bridge
     ip     = each.value.ip
     gw     = each.value.gw
+  }
+
+  lifecycle {
+    ignore_changes = [start]
   }
 }
 

@@ -7,12 +7,6 @@ variable "storage" {
   type = string
 }
 
-variable "enable_ipam" {
-  description = "When false, no phpipam_address resources are created."
-  type        = bool
-  default     = false
-}
-
 variable "lxc" {
   type = map(object({
     hostname     = string
@@ -58,12 +52,6 @@ variable "machines" {
   default = {}
 }
 
-# Map of CIDR → phpipam subnet_id. Empty when enable_ipam = false.
-variable "subnets" {
-  type    = map(string)
-  default = {}
-}
-
 variable "search_domain" {
   type = string
 }
@@ -83,4 +71,8 @@ variable "ansible_user" {
 variable "lxc_password" {
   type      = string
   sensitive = true
+}
+
+variable "ssh_private_key_path" {
+  type = string
 }
