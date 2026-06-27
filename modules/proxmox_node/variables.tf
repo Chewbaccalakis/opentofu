@@ -16,6 +16,7 @@ variable "lxc" {
     onboot       = bool
     tags         = string
     memory       = number
+    swap         = number
     disk_size    = string
     nic_name     = string
     bridge       = string

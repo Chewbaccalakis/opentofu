@@ -11,6 +11,7 @@ resource "proxmox_lxc" "container" {
   password        = var.lxc_password
   ssh_public_keys = var.ssh_key
   memory          = each.value.memory
+  swap            = each.value.swap
 
   features {
     nesting = true
