@@ -21,7 +21,7 @@ variable "lxc" {
     nic_name     = string
     bridge       = string
     ip           = string
-    nameserver   = optional(string, var.dns_nameservers)
+    nameserver   = optional(string)
     gw           = string
   }))
   default = {}
