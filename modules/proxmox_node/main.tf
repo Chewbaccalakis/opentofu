@@ -23,7 +23,7 @@ resource "proxmox_lxc" "container" {
   }
 
   searchdomain = var.search_domain
-  nameserver   = var.dns_nameservers
+  nameserver   = var.each.nameserver
 
   network {
     name   = each.value.nic_name
