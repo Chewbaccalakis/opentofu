@@ -35,6 +35,26 @@ resource "proxmox_lxc" "container" {
   lifecycle {
     ignore_changes = [start]
   }
+
+  provisioner "remote-exec" {
+    connection {
+      type        = "ssh"
+      host        = split("/", each.value.ip)[0]
+      user        = "root"
+      private_key = file(var.ssh_private_key_path)
+    }
+
+    inline = [
+      "useradd -m -s /bin/bash ${var.ansible_user}",
+      "echo '${var.ansible_user} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${var.ansible_user}",
+      "chmod 440 /etc/sudoers.d/${var.ansible_user}",
+      "mkdir -p /home/${var.ansible_user}/.ssh",
+      "echo '${var.ssh_key}' >> /home/${var.ansible_user}/.ssh/authorized_keys",
+      "chmod 700 /home/${var.ansible_user}/.ssh",
+      "chmod 600 /home/${var.ansible_user}/.ssh/authorized_keys",
+      "chown -R ${var.ansible_user}:${var.ansible_user} /home/${var.ansible_user}/.ssh",
+    ]
+  }
 }
 
 resource "proxmox_vm_qemu" "vm" {
