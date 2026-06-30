@@ -46,6 +46,7 @@ resource "proxmox_lxc" "container" {
     }
 
     inline = [
+      "apt-get install -y sudo",
       "useradd -m -s /bin/bash ${var.ansible_user}",
       "echo '${var.ansible_user} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${var.ansible_user}",
       "chmod 440 /etc/sudoers.d/${var.ansible_user}",
