@@ -7,6 +7,7 @@ resource "proxmox_lxc" "container" {
   vmid            = each.value.vmid
   unprivileged    = each.value.unprivileged
   onboot          = each.value.onboot
+  start           = true
   tags            = each.value.tags != "" ? format("terraform;%s", each.value.tags) : "terraform"
   password        = var.lxc_password
   ssh_public_keys = var.ssh_key
