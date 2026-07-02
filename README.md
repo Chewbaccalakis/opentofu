@@ -1,13 +1,16 @@
 # opentofu-proxmox
 
-A reusable OpenTofu module library for managing Proxmox VMs and LXC containers across multiple hypervisors, with optional PHPIPAM address registration and Ansible inventory generation.
+A reusable OpenTofu module library for a Proxmox-based homelab: VMs and LXC containers across one or more hypervisors, DNS records in Technitium, reverse-proxy routes in Caddy, optional phpIPAM address registration, and Ansible inventory generation.
 
 ## Contents
 
 ```
 modules/
-  proxmox_node/   — manages VMs and LXC containers on a single Proxmox node
-inventory.tpl     — Ansible inventory template consumed by the example main.tf
+  proxmox_node/   — VMs and LXC containers on a single Proxmox node
+  technitium/     — DNS zones and records on a Technitium DNS server
+  caddy/          — reverse-proxy routes on a Caddy server (via its admin API)
+  phpipam/        — address registration in phpIPAM
+inventory.tpl     — Ansible inventory template consumed by the site main.tf
 examples/
   site/           — complete working example of a parent site repo
 ```
@@ -30,103 +33,63 @@ The parent repo owns all site-specific configuration. This submodule is never mo
 ```
 site-infra/
 ├── opentofu/            # this submodule
+├── ansible/             # playbooks; inventory is generated here by tofu
 ├── backend.tf           # state backend config
 ├── providers.tf         # provider declarations + one alias per hypervisor
-├── main.tf              # one module block per hypervisor
+├── main.tf              # module blocks + shared locals
 ├── vars.tf              # variable declarations
-├── terraform.tfvars     # all site values (hypervisors, VMs, LXCs, etc.)
+├── terraform.tfvars     # all site values (hypervisors, VMs, LXCs, DNS, proxies)
 └── secrets.tmpl         # Infisical template for secrets (site-specific)
 ```
 
 See [examples/site/](examples/site/) for a complete working example of each file.
 
-### 3. Providers
+### 3. Staged bootstrap
 
-Each Proxmox hypervisor requires its own provider alias because each has a different API endpoint. In your `providers.tf`:
+A fresh site can't run everything at once — Technitium and Caddy run *on* hosts this config creates. Each service module therefore gates itself on the presence of its credentials or endpoint and no-ops until then:
 
-```hcl
-terraform {
-  required_providers {
-    proxmox = {
-      source  = "telmate/proxmox"
-      version = "3.0.2-rc04"
-    }
-    phpipam = {
-      source  = "lord-kyron/phpipam"
-      version = "1.6.2"
-    }
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.2"
-    }
-  }
-}
+| Module | Enabled when |
+|---|---|
+| `proxmox_node` | always |
+| `technitium` | `TECHNITIUM_API_TOKEN` exists in Infisical |
+| `caddy` | `caddy_host` is set in `terraform.tfvars` |
+| `phpipam` | `IPAM_USERNAME` exists in Infisical (module block commented out by default) |
 
-provider "proxmox" {
-  alias               = "hv2"
-  pm_api_url          = var.hypervisors["hv2"].api_url
-  pm_api_token_id     = data.external.infisical.result["token_id"]
-  pm_api_token_secret = data.external.infisical.result["hv2_token_secret"]
-  pm_tls_insecure     = true
-}
+The intended order: apply to create the LXCs/VMs → configure the services on them with Ansible → add the token/endpoint → apply again to start managing their contents.
 
-# Repeat for each hypervisor (hv3, hv4, ...)
-```
+### 4. Providers
 
-> **Note:** OpenTofu does not currently support dynamic provider alias creation from variables. Adding or removing a hypervisor requires adding or removing a `provider` block here and a `module` block in `main.tf`. All other changes (VMs, LXCs, network config, etc.) only require edits to `terraform.tfvars`.
+Each Proxmox hypervisor requires its own provider alias because each has a different API endpoint. Adding or removing a hypervisor requires a `provider` block in `providers.tf`, a `module` block in `main.tf`, an entry in `local.hv_hosts`, and its token secret in `secrets.tmpl`. All other changes (VMs, LXCs, DNS records, proxy routes) only touch `terraform.tfvars`.
 
-### 4. Module calls
-
-In your `main.tf`, call `proxmox_node` once per hypervisor:
-
-```hcl
-module "hv2" {
-  source = "./opentofu/modules/proxmox_node"
-
-  node_name       = var.hypervisors["hv2"].node_name
-  storage         = var.hypervisors["hv2"].storage
-  lxc             = try(var.nodes["hv2"].lxc, {})
-  machines        = try(var.nodes["hv2"].machines, {})
-  enable_ipam     = var.enable_ipam
-  subnets         = local.subnets
-  search_domain   = var.search_domain
-  dns_nameservers = var.dns_nameservers
-  ssh_key         = var.ssh_key
-  ansible_user    = var.ansible_user
-  lxc_password    = data.external.infisical.result["lxc_password"]
-
-  providers = {
-    proxmox = proxmox.hv2
-    phpipam = phpipam
-  }
-}
-```
+The Technitium and Caddy providers pass a placeholder credential / default endpoint until the real one exists, so `plan` works before those services are up. See [examples/site/providers.tf](examples/site/providers.tf).
 
 ### 5. Running OpenTofu
 
+Secrets are injected at run time by the Infisical CLI:
+
 ```bash
 tofu init
-tofu plan
-tofu apply
+infisical run --path /terraform -- tofu plan -out plan
+infisical run --path /terraform -- tofu apply plan
 ```
 
 ### Ansible inventory
 
-The example `main.tf` writes a generated Ansible inventory to `../ansible/inventories/generated.yml` (relative to wherever you run `tofu` from) using `inventory.tpl` from this submodule. Adjust the `ansible_inventory_path` variable in your `terraform.tfvars` if your directory layout differs.
+`main.tf` writes a generated Ansible inventory (grouped by hypervisor and by VM/LXC tag) to `ansible/inventories/generated.yml` in the parent repo, using `inventory.tpl` from this submodule. Adjust `ansible_inventory_path` in `terraform.tfvars` if your layout differs.
 
 ### State
 
-The example `backend.tf` defaults to a local backend that stores `terraform.tfstate` in the parent repo root (one directory above the submodule). Switch to an S3/MinIO remote backend for shared or production use — the stub is included in the example.
+The example `backend.tf` defaults to a local backend. Switch to an S3-compatible remote backend (MinIO, Garage, …) for anything shared — the stub is included in the example.
+
+---
 
 ## Proxmox setup
 
 Each Proxmox node needs a dedicated API token for OpenTofu. The token ID (`user@realm!tokenname`) is shared across all nodes; each node issues its own token secret.
 
-### 1. Create a user and role (do this once on each node, or use Datacenter-level users if your nodes are clustered)
+### 1. Create a user and role (once per node, or Datacenter-level if clustered)
 
-Via the Proxmox web UI: **Datacenter → Permissions → Users → Add**
-
-Or via the CLI on each node:
+Via the Proxmox web UI: **Datacenter → Permissions → Users → Add**, or via CLI:
 
 ```bash
 pveum user add terraform@pam --comment "OpenTofu service account"
@@ -143,13 +106,7 @@ pveum aclmod / -user terraform@pam -role TerraformRole
 
 ### 2. Create an API token (repeat on each node)
 
-Via the web UI: **Datacenter → Permissions → API Tokens → Add**
-
-- User: `terraform@pam`
-- Token ID: `tofu` (or any name you like)
-- Uncheck **Privilege Separation** so the token inherits the user's permissions
-
-Or via CLI:
+Via the web UI: **Datacenter → Permissions → API Tokens → Add** (uncheck **Privilege Separation**), or via CLI:
 
 ```bash
 pveum user token add terraform@pam tofu --privsep 0
@@ -162,18 +119,20 @@ This prints the token secret — **copy it immediately**, it is not shown again.
 | Infisical key | Value |
 |---|---|
 | `HV_USER` | `terraform@pam!tofu` (same for all nodes) |
-| `HV2_TOKEN_SECRET` | token secret from hv2 |
-| `HV3_TOKEN_SECRET` | token secret from hv3 |
+| `HV1_TOKEN_SECRET` | token secret from hv1 |
 | *(repeat per node)* | |
 | `LXC_PASSWORD` | root password set on new LXC containers |
-| `IPAM_USERNAME` | PHPIPAM username *(only if `enable_ipam = true`)* |
-| `IPAM_PASSWORD` | PHPIPAM password *(only if `enable_ipam = true`)* |
+| `SSH_PRIVATE_KEY` | base64-encoded private key for the ansible user |
+| `SSH_PUBLIC_KEY` | matching public key, injected into all managed hosts |
+| `TECHNITIUM_API_TOKEN` | Technitium API token *(add once Technitium is up — enables the technitium module)* |
+| `IPAM_USERNAME` | phpIPAM username *(only if using phpipam)* |
+| `IPAM_PASSWORD` | phpIPAM password *(only if using phpipam)* |
 
 ---
 
 ## Infisical setup
 
-Secrets are pulled at plan/apply time via the `infisical export` CLI command using a Go template (`secrets.tmpl`). No secrets are stored in the repo or in state.
+Secrets are pulled at plan/apply time via `infisical export` using a Go template (`secrets.tmpl`). No secrets are stored in the repo or in state (except the materialized SSH private key file and values that providers place in state — protect your state accordingly).
 
 ### 1. Install the Infisical CLI
 
@@ -206,27 +165,16 @@ The first line of `secrets.tmpl` references your Infisical project by UUID:
 Find the UUID in the Infisical URL when viewing your project:
 `https://app.infisical.com/project/<uuid>/...`
 
-Replace the placeholder in your site repo's `secrets.tmpl` with that UUID.
-
 ### 4. Authenticate and test
-
-For interactive/local use, log in once:
 
 ```bash
 infisical login
-```
-
-Then test that the template renders correctly:
-
-```bash
 infisical export --template=./secrets.tmpl
 ```
 
-You should see a JSON object with all your secrets. If a key is missing from the output, check that the secret name matches exactly (case-sensitive) and is under the `/terraform` path in the `prod` environment.
+You should see a JSON object with all your secrets. If a key is missing, check that the secret name matches exactly (case-sensitive) and is under the `/terraform` path in the `prod` environment.
 
 ### Machine identity (CI / non-interactive)
-
-For automated runs, use an Infisical machine identity instead of a user login:
 
 ```bash
 export INFISICAL_TOKEN=$(infisical login --method=universal-auth \
@@ -236,27 +184,109 @@ tofu apply
 
 ---
 
+## Caddy setup
+
+The `caddy` module drives Caddy's [admin API](https://caddyserver.com/docs/api) through the [`conradludgate/caddy`](https://registry.terraform.io/providers/conradludgate/caddy/latest) provider. Reverse-proxy sites are plain map entries in `terraform.tfvars`:
+
+```hcl
+caddy_proxies = {
+  wiki = {
+    host      = "wiki.example.lan"
+    upstreams = ["192.168.1.20:8080"]     # several upstreams = load balancing
+  }
+  secure = {
+    host      = "secure.example.lan"
+    upstreams = ["192.168.1.21:80"]
+    protocol  = "https"                   # default is "http"
+  }
+}
+```
+
+The module maintains two Caddy servers: `http` on `:80` (plain HTTP, no automatic HTTPS) and `https` on `:443` (automatic certificates). Each is only created when it has at least one site. Non-public hostnames (`.lan` etc.) can't get public certificates, so HTTPS sites use Caddy's internal CA — trust its root cert (`/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt` on the Caddy host) on your devices to avoid warnings.
+
+### Reaching the admin API
+
+The recommended setup keeps the admin API on the Caddy host's loopback and tunnels to it over SSH:
+
+```hcl
+caddy_host         = "http://localhost:2019"        # as seen from the caddy host
+caddy_ssh_host     = "ansible@192.168.1.5:22"
+caddy_ssh_host_key = "192.168.1.5 ecdsa-sha2-nistp256 AAAA..."
+```
+
+Notes:
+
+- `caddy_ssh_host_key` pins the host's SSH key (get it with `ssh-keyscan <ip>`). It must be the **ECDSA** line: the provider's Go SSH client prefers `ecdsa-sha2-nistp256` during negotiation and does an exact match on the key received. Refresh it if the host is ever rebuilt.
+- The tunnel authenticates with the same ansible SSH key the rest of the config uses.
+
+### Server-side expectations
+
+The Caddy host must run Caddy with the admin API enabled **and must not let a config file overwrite API-applied changes on restart**. The pattern used by the companion Ansible playbook:
+
+- A minimal Caddyfile that only sets the admin listener (no sites).
+- A systemd override so Caddy starts with `--resume`, preferring its autosaved JSON config (written on every API change) over the Caddyfile.
+- The Caddyfile is deployed **before** the caddy package is installed, so the package's default Caddyfile (which serves a static page on `:80` as server `srv0`) never runs — otherwise it gets autosaved and permanently collides with the managed `:80` server. If that has already happened, clear it once with:
+
+  ```bash
+  curl -sX DELETE http://localhost:2019/config/apps/http/servers/srv0
+  ```
+
+---
+
 ## Module reference
 
 ### `modules/proxmox_node`
 
-Manages VMs (`proxmox_vm_qemu`) and LXC containers (`proxmox_lxc`) on a single Proxmox node, with optional PHPIPAM address registration.
+Manages VMs (`proxmox_vm_qemu`) and LXC containers (`proxmox_lxc`) on a single Proxmox node. A remote-exec provisioner creates the ansible user on each new host.
 
 | Variable | Type | Description |
 |---|---|---|
-| `node_name` | `string` | Proxmox node name (e.g. `HV2`) |
+| `node_name` | `string` | Proxmox node name (e.g. `pve`) |
 | `storage` | `string` | Default storage pool (e.g. `local-lvm`) |
-| `lxc` | `map(object)` | LXC container definitions (see vars for shape) |
-| `machines` | `map(object)` | VM definitions (see vars for shape) |
-| `enable_ipam` | `bool` | Register IPs in PHPIPAM (default `false`) |
-| `subnets` | `map(string)` | CIDR → PHPIPAM subnet ID map |
+| `lxc` | `map(object)` | LXC container definitions (see variables.tf for shape) |
+| `machines` | `map(object)` | VM definitions (see variables.tf for shape) |
 | `search_domain` | `string` | DNS search domain |
-| `dns_nameservers` | `string` | DNS nameserver(s) |
+| `dns_nameservers` | `string` | Default DNS nameserver(s); LXCs can override per-container via `nameserver` |
 | `ssh_key` | `string` | SSH public key injected into all hosts |
 | `ansible_user` | `string` | User created for Ansible access |
 | `lxc_password` | `string` | Root password for LXC containers |
+| `ssh_private_key_path` | `string` | Private key used by the provisioner to reach new hosts |
 
 | Output | Description |
 |---|---|
 | `lxc_hosts` | List of `{ name, ip, vmid, filtered_tags }` for each LXC |
 | `vm_hosts` | List of `{ name, ip, vmid, filtered_tags }` for each VM |
+
+### `modules/technitium`
+
+Manages DNS zones and records on a Technitium DNS server. Every host in `hosts` gets an A record in the primary zone; manual `records` can override them by name.
+
+| Variable | Type | Description |
+|---|---|---|
+| `enabled` | `bool` | No-op when false (default) |
+| `zone` | `string` | Primary zone, normally the search domain |
+| `hosts` | `list(object)` | `{ name, ip }` hosts auto-registered as A records |
+| `zones` | `map(object)` | Extra zones: `{ type, forwarder }` |
+| `records` | `list(object)` | Manual records: `{ zone, name, type, value, ttl, priority }` |
+| `ttl` | `number` | Default TTL (3600) |
+
+### `modules/caddy`
+
+Manages reverse-proxy routes on a Caddy server via its admin API.
+
+| Variable | Type | Description |
+|---|---|---|
+| `enabled` | `bool` | No-op when false (default) |
+| `proxies` | `map(object)` | `{ host, upstreams, protocol, path }` per site |
+| `http_listen` | `list(string)` | Listen addresses for the HTTP server (`[":80"]`) |
+| `https_listen` | `list(string)` | Listen addresses for the HTTPS server (`[":443"]`) |
+
+### `modules/phpipam`
+
+Registers all declared host addresses in phpIPAM.
+
+| Variable | Type | Description |
+|---|---|---|
+| `enabled` | `bool` | No-op when false (default) |
+| `hosts` | `list(object)` | `{ name, ip }` hosts to register |
+| `network_subnets` | `map(string)` | Named CIDR ranges managed by phpIPAM |

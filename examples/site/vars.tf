@@ -1,16 +1,10 @@
 variable "hypervisors" {
-  description = "Per-hypervisor configuration. Keys must match provider aliases in providers.tf (e.g. hv2, hv3)."
+  description = "Per-hypervisor configuration. Keys must match provider aliases in providers.tf (e.g. hv1, hv2)."
   type = map(object({
     api_url   = string
     node_name = string
     storage   = string
   }))
-}
-
-variable "enable_ipam" {
-  description = "When true, register all IPs in PHPIPAM. Requires ipam_endpoint and IPAM credentials in Infisical."
-  type        = bool
-  default     = false
 }
 
 variable "ipam_endpoint" {
@@ -20,18 +14,13 @@ variable "ipam_endpoint" {
 }
 
 variable "network_subnets" {
-  description = "Named map of CIDR ranges managed by PHPIPAM. Only used when enable_ipam = true."
+  description = "Named map of CIDR ranges managed by PHPIPAM. Only used when the phpipam module is enabled."
   type        = map(string)
   default     = {}
 }
 
 variable "ansible_user" {
   description = "User created on each managed host for Ansible access."
-  type        = string
-}
-
-variable "ssh_key" {
-  description = "SSH public key injected into all managed hosts."
   type        = string
 }
 
@@ -45,37 +34,42 @@ variable "dns_nameservers" {
   type        = string
 }
 
-variable "ansible_ssh_private_key_file" {
-  description = "Path to the SSH private key written into the generated Ansible inventory."
-  type        = string
-}
-
-variable "ansible_inventory_path" {
-  description = "Path where the generated Ansible inventory file is written. Defaults to ../ansible/inventories/generated.yml relative to this module, which points to the parent repo when used as a git submodule."
-  type        = string
-  default     = "../ansible/inventories/generated.yml"
-}
-
-variable "caddy_enabled" {
-  description = "When true, manage reverse-proxy routes on the Caddy server via the caddy module."
-  type        = bool
-  default     = false
-}
-
-variable "caddy_endpoint" {
-  description = "Caddy admin API endpoint. Defaults to the local admin socket URL; when using SSH this is the endpoint as seen from the caddy host."
-  type        = string
-  default     = "http://localhost:2019"
-}
-
-variable "caddy_ssh_host" {
-  description = "SSH target (user@host:port) used to tunnel to the Caddy admin API. Empty to talk to caddy_endpoint directly."
+variable "technitium_host" {
+  description = "URL of the Technitium DNS Server API (e.g. http://192.168.0.2:5380). Required once Technitium is running."
   type        = string
   default     = ""
 }
 
-variable "caddy_ssh_key_file" {
-  description = "Path to the SSH private key used when caddy_ssh_host is set."
+variable "dns_zones" {
+  description = "Additional Technitium DNS zones to create, beyond the auto-managed search_domain zone. Keyed by zone name."
+  type = map(object({
+    type      = optional(string, "Primary")
+    forwarder = optional(string)
+  }))
+  default = {}
+}
+
+variable "dns_records" {
+  description = "Manually managed DNS records. Each targets a zone by name (the search_domain zone or one from dns_zones). A record in the search_domain zone whose name matches an auto-added host replaces that host record instead of conflicting with it."
+  type = list(object({
+    zone     = string
+    name     = string           # subdomain label, or "@" for the zone apex
+    type     = string           # A, AAAA, CNAME, NS, TXT, MX
+    value    = string           # IP / target / text / mail exchanger
+    ttl      = optional(number)
+    priority = optional(number) # required for MX records
+  }))
+  default = []
+}
+
+variable "caddy_host" {
+  description = "Caddy admin API endpoint. When using the SSH tunnel this is the endpoint as seen from the caddy host (e.g. http://localhost:2019). Leave empty to disable Caddy management."
+  type        = string
+  default     = ""
+}
+
+variable "caddy_ssh_host" {
+  description = "SSH target (user@host:port) used to tunnel to the Caddy admin API. Empty to reach caddy_host directly."
   type        = string
   default     = ""
 }
@@ -87,7 +81,7 @@ variable "caddy_ssh_host_key" {
 }
 
 variable "caddy_proxies" {
-  description = "Reverse-proxy sites keyed by name, passed through to the caddy module. protocol picks plain HTTP on :80 (default) or HTTPS on :443 with automatic certificates."
+  description = "Reverse-proxy sites keyed by name. Each maps a hostname to one or more upstream backends (Caddy dial targets, e.g. \"192.168.0.40:32400\"). protocol picks plain HTTP on :80 (default) or HTTPS on :443 with automatic certificates. Set path to restrict the route to specific request paths."
   type = map(object({
     host      = string
     upstreams = list(string)
@@ -95,6 +89,12 @@ variable "caddy_proxies" {
     path      = optional(list(string))
   }))
   default = {}
+}
+
+variable "ansible_inventory_path" {
+  description = "Path where the generated Ansible inventory file is written, relative to the repo root."
+  type        = string
+  default     = "./ansible/inventories/generated.yml"
 }
 
 # LXC and VM definitions per hypervisor, keyed by the same names used in
@@ -110,10 +110,12 @@ variable "nodes" {
       onboot       = bool
       tags         = string
       memory       = number
+      swap         = number
       disk_size    = string
       nic_name     = string
       bridge       = string
       ip           = string
+      nameserver   = optional(string)
       gw           = string
     })), {})
     machines = optional(map(object({
@@ -125,7 +127,7 @@ variable "nodes" {
       template   = string
       full_clone = bool
       onboot     = bool
-      ciupgrade  = optional(string, "false")
+      ciupgrade  = optional(bool, false)
       tags       = string
       agent      = number
       memory     = number
