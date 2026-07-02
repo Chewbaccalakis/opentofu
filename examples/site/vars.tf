@@ -56,6 +56,47 @@ variable "ansible_inventory_path" {
   default     = "../ansible/inventories/generated.yml"
 }
 
+variable "caddy_enabled" {
+  description = "When true, manage reverse-proxy routes on the Caddy server via the caddy module."
+  type        = bool
+  default     = false
+}
+
+variable "caddy_endpoint" {
+  description = "Caddy admin API endpoint. Defaults to the local admin socket URL; when using SSH this is the endpoint as seen from the caddy host."
+  type        = string
+  default     = "http://localhost:2019"
+}
+
+variable "caddy_ssh_host" {
+  description = "SSH target (user@host:port) used to tunnel to the Caddy admin API. Empty to talk to caddy_endpoint directly."
+  type        = string
+  default     = ""
+}
+
+variable "caddy_ssh_key_file" {
+  description = "Path to the SSH private key used when caddy_ssh_host is set."
+  type        = string
+  default     = ""
+}
+
+variable "caddy_ssh_host_key" {
+  description = "SSH host key of the caddy host, known_hosts format (get it with: ssh-keyscan <ip>). Required when caddy_ssh_host is set."
+  type        = string
+  default     = ""
+}
+
+variable "caddy_proxies" {
+  description = "Reverse-proxy sites keyed by name, passed through to the caddy module. protocol picks plain HTTP on :80 (default) or HTTPS on :443 with automatic certificates."
+  type = map(object({
+    host      = string
+    upstreams = list(string)
+    protocol  = optional(string, "http")
+    path      = optional(list(string))
+  }))
+  default = {}
+}
+
 # LXC and VM definitions per hypervisor, keyed by the same names used in
 # hypervisors and providers.tf. Both lxc and machines default to {} so a node
 # can be declared with only one type of workload.

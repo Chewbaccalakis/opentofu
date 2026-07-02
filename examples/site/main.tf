@@ -154,3 +154,14 @@ resource "local_file" "ansible_inventory" {
     ansible_ssh_private_key_file = var.ansible_ssh_private_key_file
   })
 }
+
+module "caddy" {
+  source = "./opentofu/modules/caddy"
+
+  enabled = var.caddy_enabled
+  proxies = var.caddy_proxies
+
+  providers = {
+    caddy = caddy
+  }
+}

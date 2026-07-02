@@ -39,6 +39,24 @@ search_domain                = "trochalakis.com"
 dns_nameservers              = "1.1.1.1"
 ansible_ssh_private_key_file = "/home/nick/.ssh/ansible"
 
+# ── Reverse proxy (Caddy) ───────────────────────────────────────────────────────
+
+caddy_enabled  = false
+caddy_endpoint = "http://192.168.5.203:2019"
+# caddy_ssh_host     = "nick@192.168.5.203:22"
+# caddy_ssh_key_file = "/home/nick/.ssh/ansible"
+
+caddy_proxies = {
+  plex = {
+    host      = "plex.trochalakis.com"
+    upstreams = ["192.168.5.40:32400"]
+  }
+  monitor = {
+    host      = "monitor.trochalakis.com"
+    upstreams = ["192.168.5.222:3000"]
+  }
+}
+
 # ── Node definitions ───────────────────────────────────────────────────────────
 
 nodes = {

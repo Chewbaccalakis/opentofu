@@ -12,6 +12,10 @@ terraform {
       source  = "hashicorp/local"
       version = "~> 2.2"
     }
+    caddy = {
+      source  = "conradludgate/caddy"
+      version = "~> 0.2"
+    }
   }
 }
 
@@ -49,6 +53,22 @@ provider "proxmox" {
   pm_api_token_id     = data.external.infisical.result["token_id"]
   pm_api_token_secret = data.external.infisical.result["hv5_token_secret"]
   pm_tls_insecure     = true
+}
+
+provider "caddy" {
+  host = var.caddy_endpoint
+
+  # Reach the Caddy admin API over SSH when it only listens on the caddy host's
+  # loopback (the recommended setup). Leave caddy_ssh_host empty to talk to the
+  # endpoint directly.
+  dynamic "ssh" {
+    for_each = var.caddy_ssh_host != "" ? [1] : []
+    content {
+      host     = var.caddy_ssh_host
+      key_file = var.caddy_ssh_key_file
+      host_key = var.caddy_ssh_host_key
+    }
+  }
 }
 
 provider "phpipam" {
