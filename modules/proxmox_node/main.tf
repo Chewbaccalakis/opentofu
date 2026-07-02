@@ -81,7 +81,6 @@ resource "proxmox_vm_qemu" "vm" {
   sshkeys      = var.ssh_key
 
   # Options
-  onboot = each.value.onboot
   boot   = "order=virtio0"
   agent  = each.value.agent
 
