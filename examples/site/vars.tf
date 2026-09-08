@@ -1,7 +1,7 @@
 variable "hypervisors" {
   description = "Per-hypervisor configuration. Keys must match provider aliases in providers.tf (e.g. hv1, hv2)."
   type = map(object({
-    api_url   = string
+    api_url   = string # e.g. https://192.168.1.10:8006/
     node_name = string
     storage   = string
   }))
@@ -106,14 +106,17 @@ variable "nodes" {
       hostname     = string
       vmid         = number
       template     = string
+      os_type      = optional(string, "debian")
       unprivileged = bool
       onboot       = bool
       tags         = string
+      cores        = optional(number, 1)
       memory       = number
       swap         = number
       disk_size    = string
       nic_name     = string
       bridge       = string
+      vlan         = optional(number)
       ip           = string
       nameserver   = optional(string)
       gw           = string

@@ -96,13 +96,14 @@ pveum user add terraform@pam --comment "OpenTofu service account"
 pveum role add TerraformRole --privs \
   "VM.Allocate VM.Clone VM.Config.CDROM VM.Config.CPU VM.Config.Cloudinit \
    VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network \
-   VM.Config.Options VM.Monitor VM.Audit VM.PowerMgmt \
+   VM.Config.Options VM.Monitor VM.Audit VM.PowerMgmt VM.GuestAgent.Audit \
    Datastore.AllocateSpace Datastore.AllocateTemplate Datastore.Audit \
    SDN.Use Sys.Audit Pool.Audit"
 pveum aclmod / -user terraform@pam -role TerraformRole
 ```
 
 > For a homelab you can simplify by assigning the built-in `PVEAdmin` role instead of creating a custom one.
+> `VM.GuestAgent.Audit` (Proxmox VE 9+) lets the provider read guest IPs via the QEMU agent; without it every plan logs a harmless 403 warning per VM.
 
 ### 2. Create an API token (repeat on each node)
 
@@ -237,7 +238,7 @@ The Caddy host must run Caddy with the admin API enabled **and must not let a co
 
 ### `modules/proxmox_node`
 
-Manages VMs (`proxmox_vm_qemu`) and LXC containers (`proxmox_lxc`) on a single Proxmox node. A remote-exec provisioner creates the ansible user on each new host.
+Manages VMs (`proxmox_virtual_environment_vm`) and LXC containers (`proxmox_virtual_environment_container`) on a single Proxmox node via the [`bpg/proxmox`](https://registry.terraform.io/providers/bpg/proxmox/latest) provider. VMs are full clones of a template referenced by name; the template must exist on the same node. A remote-exec provisioner creates the ansible user on each new host.
 
 | Variable | Type | Description |
 |---|---|---|

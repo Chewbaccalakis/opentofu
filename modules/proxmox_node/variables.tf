@@ -12,14 +12,17 @@ variable "lxc" {
     hostname     = string
     vmid         = number
     template     = string
+    os_type      = optional(string, "debian")
     unprivileged = bool
     onboot       = bool
     tags         = string
+    cores        = optional(number, 1)
     memory       = number
     swap         = number
     disk_size    = string
     nic_name     = string
     bridge       = string
+    vlan         = optional(number)
     ip           = string
     nameserver   = optional(string)
     gw           = string
@@ -37,7 +40,7 @@ variable "machines" {
     template   = string
     full_clone = bool
     onboot     = bool
-    ciupgrade  = optional(string, "false")
+    ciupgrade  = optional(bool, false)
     tags       = string
     agent      = number
     memory     = number

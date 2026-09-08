@@ -2,7 +2,7 @@
 
 hypervisors = {
   hv1 = {
-    api_url   = "https://192.168.1.10:8006/api2/json"
+    api_url   = "https://192.168.1.10:8006/"
     node_name = "pve"
     storage   = "local-lvm"
   }

@@ -1,8 +1,8 @@
 terraform {
   required_providers {
     proxmox = {
-      source  = "telmate/proxmox"
-      version = "3.0.2-rc04"
+      source  = "bpg/proxmox"
+      version = "~> 0.112"
     }
     local = {
       source  = "hashicorp/local"
@@ -68,9 +68,8 @@ provider "caddy" {
 # One provider alias per hypervisor. To add a hypervisor, add a provider block
 # here, a module block in main.tf, and its token secret to secrets.tmpl.
 provider "proxmox" {
-  alias               = "hv1"
-  pm_api_url          = var.hypervisors["hv1"].api_url
-  pm_api_token_id     = data.external.infisical.result["token_id"]
-  pm_api_token_secret = data.external.infisical.result["hv1_token_secret"]
-  pm_tls_insecure     = true
+  alias     = "hv1"
+  endpoint  = var.hypervisors["hv1"].api_url
+  api_token = "${data.external.infisical.result["token_id"]}=${data.external.infisical.result["hv1_token_secret"]}"
+  insecure  = true
 }

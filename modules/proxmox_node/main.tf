@@ -1,40 +1,86 @@
-resource "proxmox_lxc" "container" {
+locals {
+  # Tags are declared as a ";"-separated string (tfvars) but the provider wants
+  # a list. Proxmox stores tags sorted, so sort here to keep plans clean.
+  lxc_tags = { for k, v in var.lxc : k => sort(compact(concat(["terraform"], split(";", v.tags)))) }
+  vm_tags  = { for k, v in var.machines : k => sort(compact(concat(["terraform"], split(";", v.tags)))) }
+
+  dns_servers = compact(split(" ", var.dns_nameservers))
+}
+
+resource "proxmox_virtual_environment_container" "container" {
   for_each = var.lxc
 
-  target_node     = var.node_name
-  hostname        = each.value.hostname
-  ostemplate      = each.value.template
-  vmid            = each.value.vmid
-  unprivileged    = each.value.unprivileged
-  onboot          = each.value.onboot
-  start           = true
-  tags            = each.value.tags != "" ? format("terraform;%s", each.value.tags) : "terraform"
-  password        = var.lxc_password
-  ssh_public_keys = var.ssh_key
-  memory          = each.value.memory
-  swap            = each.value.swap
+  node_name     = var.node_name
+  vm_id         = each.value.vmid
+  unprivileged  = each.value.unprivileged
+  start_on_boot = each.value.onboot
+  started       = true
+  tags          = local.lxc_tags[each.key]
+
+  operating_system {
+    template_file_id = each.value.template
+    type             = each.value.os_type
+  }
+
+  # Proxmox reports an unset core limit as 1 and no cpuunits as 1024; declare
+  # both so the provider never rewrites them (changing architecture also needs
+  # root@pam, which the API token is not).
+  cpu {
+    architecture = "amd64"
+    cores        = each.value.cores
+    units        = 1024
+  }
+
+  memory {
+    dedicated = each.value.memory
+    swap      = each.value.swap
+  }
+
+  disk {
+    datastore_id = var.storage
+    size         = tonumber(trimsuffix(each.value.disk_size, "G"))
+  }
 
   features {
     nesting = true
   }
 
-  rootfs {
-    storage = var.storage
-    size    = each.value.disk_size
+  initialization {
+    hostname = each.value.hostname
+
+    dns {
+      domain  = var.search_domain
+      servers = each.value.nameserver != null ? compact(split(" ", each.value.nameserver)) : local.dns_servers
+    }
+
+    ip_config {
+      ipv4 {
+        address = each.value.ip
+        gateway = each.value.gw
+      }
+    }
+
+    user_account {
+      keys     = [trimspace(var.ssh_key)]
+      password = var.lxc_password
+    }
   }
 
-  searchdomain = var.search_domain
-  nameserver   = coalesce(each.value.nameserver, var.dns_nameservers)
-
-  network {
-    name   = each.value.nic_name
-    bridge = each.value.bridge
-    ip     = each.value.ip
-    gw     = each.value.gw
+  network_interface {
+    name    = each.value.nic_name
+    bridge  = each.value.bridge
+    vlan_id = each.value.vlan
   }
 
   lifecycle {
-    ignore_changes = [start]
+    ignore_changes = [
+      # Don't fight manual starts/stops (same as the old `start` handling).
+      started,
+      # Only used at creation time and not readable back from Proxmox; any
+      # change here would otherwise force a rebuild of the container.
+      operating_system[0].template_file_id,
+      initialization[0].user_account,
+    ]
   }
 
   provisioner "remote-exec" {
@@ -59,79 +105,139 @@ resource "proxmox_lxc" "container" {
   }
 }
 
-resource "proxmox_vm_qemu" "vm" {
+# VMs are cloned from a template referenced by name in tfvars; resolve the
+# name to its VM ID on this node. Fails the plan if the name is ambiguous or
+# missing.
+data "proxmox_virtual_environment_vms" "template" {
+  for_each = toset([for m in var.machines : m.template])
+
+  node_name = var.node_name
+
+  filter {
+    name   = "template"
+    values = [true]
+  }
+
+  filter {
+    name   = "name"
+    values = [each.key]
+  }
+}
+
+resource "proxmox_virtual_environment_vm" "vm" {
   for_each = var.machines
 
-  target_node = var.node_name
-  name        = each.value.hostname
-  vmid        = each.value.vmid
-  clone       = each.value.template
-  full_clone  = each.value.full_clone
-  tags        = each.value.tags != "" ? format("terraform;%s", each.value.tags) : "terraform"
+  node_name = var.node_name
+  name      = each.value.hostname
+  vm_id     = each.value.vmid
+  tags      = local.vm_tags[each.key]
+  on_boot   = each.value.onboot
+  started   = true
 
-  # Cloud-Init
-  os_type      = "cloud-init"
-  ciupgrade    = each.value.ciupgrade
-  ipconfig0    = "ip=${each.value.ip}/24,gw=${cidrhost(format("%s/24", each.value.ip), 1)}"
-  ipconfig1    = each.value.ip2 != null ? "ip=${each.value.ip2}/24" : null
-  searchdomain = var.search_domain
-  nameserver   = var.dns_nameservers
-  skip_ipv6    = true
-  ciuser       = var.ansible_user
-  sshkeys      = var.ssh_key
+  clone {
+    vm_id = one(data.proxmox_virtual_environment_vms.template[each.value.template].vms).vm_id
+    full  = each.value.full_clone
+  }
 
   # Options
-  boot   = "order=virtio0"
-  agent  = each.value.agent
+  bios          = each.value.bios
+  machine       = each.value.machine
+  scsi_hardware = "virtio-scsi-pci"
+  boot_order    = ["virtio0"]
+
+  agent {
+    enabled = each.value.agent == 1
+  }
 
   # CPU
   cpu {
-    type    = each.value.cpu_type
-    cores   = each.value.cores
-    vcores  = each.value.vcpus
-    sockets = each.value.sockets
+    type       = each.value.cpu_type
+    cores      = each.value.cores
+    sockets    = each.value.sockets
+    hotplugged = each.value.vcpus
   }
 
   # Hardware
-  memory  = each.value.memory
-  balloon = each.value.balloon
-  bios    = each.value.bios
-  machine = each.value.machine
-  scsihw  = "virtio-scsi-pci"
-
-  serial {
-    id = 0
+  memory {
+    dedicated = each.value.memory
+    floating  = each.value.balloon
   }
 
-  disks {
-    ide {
-      ide2 {
-        cloudinit {
-          storage = var.storage
-        }
-      }
-    }
-    virtio {
-      virtio0 {
-        disk {
-          size     = each.value.disk_size
-          cache    = "writeback"
-          storage  = var.storage
-          iothread = true
-          discard  = true
-        }
-      }
+  # UEFI vars disk; raw is the format on block storage (local-lvm / zfs).
+  dynamic "efi_disk" {
+    for_each = each.value.bios == "ovmf" ? [1] : []
+    content {
+      datastore_id = var.storage
+      file_format  = "raw"
+      type         = "4m"
     }
   }
 
-  network {
-    id     = 0
-    model  = "virtio"
-    bridge = each.value.bridge
-    tag    = each.value.vlan != 0 ? each.value.vlan : null
+  disk {
+    interface    = "virtio0"
+    datastore_id = var.storage
+    size         = tonumber(each.value.disk_size)
+    file_format  = "raw"
+    cache        = "writeback"
+    discard      = "on"
+    iothread     = true
+    replicate    = false
+  }
+
+  network_device {
+    bridge  = each.value.bridge
+    model   = "virtio"
+    vlan_id = each.value.vlan != 0 ? each.value.vlan : null
+  }
+
+  serial_device {
+    device = "socket"
+  }
+
+  operating_system {
+    type = "l26"
+  }
+
+  # Cloud-Init
+  initialization {
+    datastore_id = var.storage
+    interface    = "ide2"
+    upgrade      = each.value.ciupgrade
+
+    dns {
+      domain  = var.search_domain
+      servers = local.dns_servers
+    }
+
+    ip_config {
+      ipv4 {
+        address = "${each.value.ip}/24"
+        gateway = cidrhost(format("%s/24", each.value.ip), 1)
+      }
+    }
+
+    dynamic "ip_config" {
+      for_each = each.value.ip2 != null ? [each.value.ip2] : []
+      content {
+        ipv4 {
+          address = "${ip_config.value}/24"
+        }
+      }
+    }
+
+    user_account {
+      username = var.ansible_user
+      keys     = [trimspace(var.ssh_key)]
+    }
   }
 
   lifecycle {
-    ignore_changes = [network]
+    ignore_changes = [
+      # Don't fight manual starts/stops.
+      started,
+      # Clone source is only used at creation time and is not readable back
+      # from Proxmox; a change here would otherwise force a rebuild of the VM.
+      clone,
+    ]
   }
 }
