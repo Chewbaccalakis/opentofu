@@ -120,12 +120,18 @@ variable "nodes" {
       ip           = string
       nameserver   = optional(string)
       gw           = string
+      nic2 = optional(object({
+        nic_name = optional(string, "eth1")
+        bridge   = optional(string, "vmbr0")
+        vlan     = optional(number)
+        ip       = string
+        gw       = optional(string)
+      }))
     })), {})
     machines = optional(map(object({
       hostname   = string
       vmid       = number
       ip         = string
-      ip2        = optional(string, null)
       vlan       = optional(number, 0)
       template   = string
       full_clone = bool
@@ -143,22 +149,31 @@ variable "nodes" {
       bios       = string
       machine    = string
       bridge     = string
+      nic2 = optional(object({
+        bridge = optional(string, "vmbr0")
+        vlan   = optional(number)
+        ip     = string
+        gw     = optional(string)
+      }))
     })), {})
     flatcar = optional(map(object({
-      hostname    = string
-      vmid        = number
-      ip          = string
-      gw          = optional(string)
-      vlan        = optional(number, 0)
-      bridge      = optional(string, "vmbr0")
-      onboot      = optional(bool, true)
-      tags        = optional(string, "")
-      cores       = optional(number, 2)
-      cpu_type    = optional(string, "x86-64-v2-AES")
-      memory      = optional(number, 4096)
-      disk_size   = optional(number, 32)
-      butane      = optional(string) # inline Butane YAML
-      butane_file = optional(string) # path relative to this directory
+      hostname  = string
+      vmid      = number
+      ip        = string
+      gw        = optional(string)
+      vlan      = optional(number, 0)
+      bridge    = optional(string, "vmbr0")
+      onboot    = optional(bool, true)
+      tags      = optional(string, "")
+      cores     = optional(number, 2)
+      cpu_type  = optional(string, "x86-64-v2-AES")
+      memory    = optional(number, 4096)
+      disk_size = optional(number, 32)
+      # Needs a Butane unit running qemu-ga in a container; see the module's
+      # variables.tf.
+      qemu_guest_agent = optional(bool, false)
+      butane           = optional(string) # inline Butane YAML
+      butane_file      = optional(string) # path relative to this directory
     })), {})
   }))
   default = {}

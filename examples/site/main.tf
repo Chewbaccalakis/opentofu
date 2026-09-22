@@ -58,6 +58,7 @@ module "hv1" {
   ssh_private_key_path = local.node_common.ssh_private_key_path
   flatcar_image        = var.flatcar_image
   snippets_datastore   = var.snippets_datastore
+  butane_vars          = data.external.infisical.result
 
   providers = {
     proxmox = proxmox.hv1
