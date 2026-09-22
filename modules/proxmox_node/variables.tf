@@ -26,6 +26,15 @@ variable "lxc" {
     ip           = string
     nameserver   = optional(string)
     gw           = string
+    # Optional second NIC, e.g. for a separate VLAN/subnet. `ip` is a full
+    # CIDR address (matches the primary `ip` field's format).
+    nic2 = optional(object({
+      nic_name = optional(string, "eth1")
+      bridge   = optional(string, "vmbr0")
+      vlan     = optional(number)
+      ip       = string
+      gw       = optional(string)
+    }))
   }))
   default = {}
 }
@@ -35,7 +44,6 @@ variable "machines" {
     hostname   = string
     vmid       = number
     ip         = string
-    ip2        = optional(string, null)
     vlan       = optional(number, 0)
     template   = string
     full_clone = bool
@@ -53,6 +61,16 @@ variable "machines" {
     bios       = string
     machine    = string
     bridge     = string
+    # Optional second NIC, e.g. for a separate VLAN/subnet. `ip` is bare
+    # (matches the primary `ip` field's format), assumed /24; gateway is only
+    # configured if given, since the default route already comes from the
+    # primary NIC.
+    nic2 = optional(object({
+      bridge = optional(string, "vmbr0")
+      vlan   = optional(number)
+      ip     = string
+      gw     = optional(string)
+    }))
   }))
   default = {}
 }

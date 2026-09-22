@@ -60,6 +60,18 @@ resource "proxmox_virtual_environment_container" "container" {
       }
     }
 
+    # Must stay positionally aligned with the network_interface blocks below
+    # (ip_config index N configures netN).
+    dynamic "ip_config" {
+      for_each = each.value.nic2 != null ? [each.value.nic2] : []
+      content {
+        ipv4 {
+          address = ip_config.value.ip
+          gateway = ip_config.value.gw
+        }
+      }
+    }
+
     user_account {
       keys     = [trimspace(var.ssh_key)]
       password = var.lxc_password
@@ -70,6 +82,15 @@ resource "proxmox_virtual_environment_container" "container" {
     name    = each.value.nic_name
     bridge  = each.value.bridge
     vlan_id = each.value.vlan
+  }
+
+  dynamic "network_interface" {
+    for_each = each.value.nic2 != null ? [each.value.nic2] : []
+    content {
+      name    = network_interface.value.nic_name
+      bridge  = network_interface.value.bridge
+      vlan_id = network_interface.value.vlan
+    }
   }
 
   lifecycle {
@@ -190,6 +211,17 @@ resource "proxmox_virtual_environment_vm" "vm" {
     vlan_id = each.value.vlan != 0 ? each.value.vlan : null
   }
 
+  # Must stay positionally aligned with the ip_config blocks below (netN
+  # configured by cloud-init via ip_config index N).
+  dynamic "network_device" {
+    for_each = each.value.nic2 != null ? [each.value.nic2] : []
+    content {
+      bridge  = network_device.value.bridge
+      model   = "virtio"
+      vlan_id = network_device.value.vlan
+    }
+  }
+
   serial_device {
     device = "socket"
   }
@@ -217,10 +249,11 @@ resource "proxmox_virtual_environment_vm" "vm" {
     }
 
     dynamic "ip_config" {
-      for_each = each.value.ip2 != null ? [each.value.ip2] : []
+      for_each = each.value.nic2 != null ? [each.value.nic2] : []
       content {
         ipv4 {
-          address = "${ip_config.value}/24"
+          address = "${ip_config.value.ip}/24"
+          gateway = ip_config.value.gw
         }
       }
     }

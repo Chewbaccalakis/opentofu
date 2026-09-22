@@ -253,6 +253,27 @@ Manages VMs (`proxmox_virtual_environment_vm`) and LXC containers (`proxmox_virt
 | `lxc_password` | `string` | Root password for LXC containers |
 | `ssh_private_key_path` | `string` | Private key used by the provisioner to reach new hosts |
 
+Both `lxc` and `machines` entries accept an optional `nic2` object to attach a second NIC, which can sit on its own bridge/VLAN:
+
+```hcl
+# LXC: ip is a full CIDR address, like the primary `ip` field.
+nic2 = {
+  nic_name = "eth1"   # optional, defaults to "eth1"
+  bridge   = "vmbr0"  # optional, defaults to "vmbr0"
+  vlan     = 7        # optional
+  ip       = "192.168.7.10/24"
+  gw       = "192.168.7.1" # optional
+}
+
+# VM: ip is bare, assumed /24, like the primary `ip` field.
+nic2 = {
+  bridge = "vmbr0" # optional, defaults to "vmbr0"
+  vlan   = 7       # optional
+  ip     = "192.168.7.11"
+  gw     = "192.168.7.1" # optional; omit to leave the second NIC without a default route
+}
+```
+
 | Output | Description |
 |---|---|
 | `lxc_hosts` | List of `{ name, ip, vmid, filtered_tags }` for each LXC |
