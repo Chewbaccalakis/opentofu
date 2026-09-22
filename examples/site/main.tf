@@ -14,7 +14,8 @@ locals {
   all_declared_hosts = flatten([
     for hv_name, hv in var.nodes : concat(
       [for name, lxc in try(hv.lxc, {}) : { name = name, ip = split("/", lxc.ip)[0] }],
-      [for name, vm in try(hv.machines, {}) : { name = name, ip = split("/", vm.ip)[0] }]
+      [for name, vm in try(hv.machines, {}) : { name = name, ip = split("/", vm.ip)[0] }],
+      [for name, fc in try(hv.flatcar, {}) : { name = name, ip = fc.ip }]
     )
   ])
 
@@ -48,12 +49,15 @@ module "hv1" {
   storage              = var.hypervisors["hv1"].storage
   lxc                  = try(var.nodes["hv1"].lxc, {})
   machines             = try(var.nodes["hv1"].machines, {})
+  flatcar              = try(var.nodes["hv1"].flatcar, {})
   search_domain        = local.node_common.search_domain
   dns_nameservers      = local.node_common.dns_nameservers
   ssh_key              = local.node_common.ssh_key
   ansible_user         = local.node_common.ansible_user
   lxc_password         = local.node_common.lxc_password
   ssh_private_key_path = local.node_common.ssh_private_key_path
+  flatcar_image        = var.flatcar_image
+  snippets_datastore   = var.snippets_datastore
 
   providers = {
     proxmox = proxmox.hv1
@@ -63,12 +67,12 @@ module "hv1" {
 locals {
   # Add an entry per hypervisor module block above.
   hv_hosts = {
-    hv1 = { lxc = module.hv1.lxc_hosts, vm = module.hv1.vm_hosts }
+    hv1 = { lxc = module.hv1.lxc_hosts, vm = module.hv1.vm_hosts, flatcar = module.hv1.flatcar_hosts }
   }
 
   all_hosts = flatten([
     for hv_name, hv in local.hv_hosts : [
-      for h in concat(hv.lxc, hv.vm) : [
+      for h in concat(hv.lxc, hv.vm, hv.flatcar) : [
         for tag in h.filtered_tags : {
           tag  = tag
           name = h.name
@@ -123,7 +127,7 @@ module "caddy" {
 
 resource "local_file" "ansible_inventory" {
   filename = "${path.module}/${var.ansible_inventory_path}"
-  content  = templatefile("${path.module}/opentofu/inventory.tpl", {
+  content = templatefile("${path.module}/opentofu/inventory.tpl", {
     hypervisors                  = local.hv_hosts
     tag_groups                   = local.tag_groups
     ansible_user                 = var.ansible_user

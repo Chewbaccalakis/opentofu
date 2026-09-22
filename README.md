@@ -252,6 +252,10 @@ Manages VMs (`proxmox_virtual_environment_vm`) and LXC containers (`proxmox_virt
 | `ansible_user` | `string` | User created for Ansible access |
 | `lxc_password` | `string` | Root password for LXC containers |
 | `ssh_private_key_path` | `string` | Private key used by the provisioner to reach new hosts |
+| `flatcar` | `map(object)` | Flatcar VM definitions (see variables.tf and the Flatcar section below) |
+| `flatcar_image` | `object` | Flatcar release to import: `{ channel, version, sha512, datastore }` |
+| `snippets_datastore` | `string` | Datastore for Ignition snippets (`local`) |
+| `butane_vars` | `map(string)` | Values available to every `butane_file` as `${key}` (see below) |
 
 Both `lxc` and `machines` entries accept an optional `nic2` object to attach a second NIC, which can sit on its own bridge/VLAN:
 
@@ -278,6 +282,43 @@ nic2 = {
 |---|---|
 | `lxc_hosts` | List of `{ name, ip, vmid, filtered_tags }` for each LXC |
 | `vm_hosts` | List of `{ name, ip, vmid, filtered_tags }` for each VM |
+| `flatcar_hosts` | List of `{ name, ip, vmid, filtered_tags }` for each Flatcar VM |
+
+#### Flatcar VMs
+
+Flatcar Container Linux does not use cloud-init. Each Flatcar VM is created from the official Proxmox VE image and configured by [Ignition](https://coreos.github.io/ignition/) on first boot:
+
+1. `proxmox_download_file` fetches the pinned image (`flatcar_image`) into the node's `local` datastore as an importable disk (API only).
+2. `data "ct_config"` ([poseidon/ct](https://registry.terraform.io/providers/poseidon/ct/latest)) renders Butane to Ignition JSON. The module generates a base config (hostname, `core` and the ansible user with the shared SSH key) and merges the optional per-VM Butane (`butane` inline or `butane_file` path) from tfvars.
+3. `proxmox_virtual_environment_file` uploads the Ignition JSON as a snippet. Proxmox has no API for snippets, so **this needs SSH access from the provider to the node** (`ssh` block in `providers.tf`, root user with the ansible key).
+4. `proxmox_virtual_environment_vm` imports the image as the boot disk (`disk.import_from`) and passes the snippet as cloud-init user-data (`initialization.user_data_file_id`). Static IP and DNS still come from `ip_config`/`dns`: Flatcar's Afterburn applies the network config Proxmox generates.
+
+Node prerequisites (once per hypervisor):
+
+- `local` storage must have the **Import** and **Snippets** content types enabled (Datacenter → Storage → local → Content).
+- root's `authorized_keys` must contain the ansible public key (`SSH_PUBLIC_KEY` in Infisical).
+
+Caveats:
+
+- Ignition runs on first boot only. Changing `butane` (or anything in the base config) updates the snippet but does not touch the VM; taint it to rebuild from the image.
+- Flatcar has no QEMU guest agent and no Python, so `agent` is disabled and Ansible can only use `raw`/`script` tasks against these hosts (they are grouped under `flatcar` in the generated inventory).
+- Ignition configs are stored in plain text on the node's snippets datastore. A secret that has to reach a VM this way (a runner registration token, say) should come from `butane_vars` so it is at least not committed, but it is still readable on the node — see below.
+- `butane_file` is rendered with `templatefile()` against `butane_vars`, so a file can refer to `${some_key}` and the root module supplies the value (typically straight from its secret store, keeping it out of git). Every `butane_file` is a template whether or not it uses this, so a literal `${...}` in one must be escaped as `$${...}`. Inline `butane` is not templated: tfvars cannot read data sources anyway.
+
+```hcl
+flatcar = {
+  "flatcar-1" = {
+    hostname  = "flatcar-1"
+    vmid      = 210
+    ip        = "192.168.7.60"
+    vlan      = 7
+    memory    = 4096
+    cores     = 2
+    disk_size = 32
+    butane_file = "butane/flatcar-1.yaml"   # optional
+  }
+}
+```
 
 ### `modules/technitium`
 

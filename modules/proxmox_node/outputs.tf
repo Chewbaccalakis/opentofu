@@ -19,3 +19,14 @@ output "vm_hosts" {
     }
   ]
 }
+
+output "flatcar_hosts" {
+  value = [
+    for key, val in var.flatcar : {
+      name          = val.hostname
+      ip            = val.ip
+      vmid          = proxmox_virtual_environment_vm.flatcar[key].vm_id
+      filtered_tags = [for tag in local.flatcar_tags[key] : tag if tag != "terraform"]
+    }
+  ]
+}

@@ -103,6 +103,19 @@ nodes = {
         gw           = "192.168.1.1"
       }
     }
+    # Flatcar Container Linux VMs, provisioned by Ignition. See the Flatcar
+    # section of the README before enabling.
+    # flatcar = {
+    #   "flatcar-1" = {
+    #     hostname  = "flatcar-1"
+    #     vmid      = 210
+    #     ip        = "192.168.1.60"
+    #     memory    = 4096
+    #     cores     = 2
+    #     disk_size = 32
+    #     butane_file = "butane/flatcar-1.yaml"
+    #   }
+    # }
     machines = {
       "dev01" = {
         hostname   = "dev01"

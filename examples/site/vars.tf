@@ -53,9 +53,9 @@ variable "dns_records" {
   description = "Manually managed DNS records. Each targets a zone by name (the search_domain zone or one from dns_zones). A record in the search_domain zone whose name matches an auto-added host replaces that host record instead of conflicting with it."
   type = list(object({
     zone     = string
-    name     = string           # subdomain label, or "@" for the zone apex
-    type     = string           # A, AAAA, CNAME, NS, TXT, MX
-    value    = string           # IP / target / text / mail exchanger
+    name     = string # subdomain label, or "@" for the zone apex
+    type     = string # A, AAAA, CNAME, NS, TXT, MX
+    value    = string # IP / target / text / mail exchanger
     ttl      = optional(number)
     priority = optional(number) # required for MX records
   }))
@@ -97,9 +97,9 @@ variable "ansible_inventory_path" {
   default     = "./ansible/inventories/generated.yml"
 }
 
-# LXC and VM definitions per hypervisor, keyed by the same names used in
-# hypervisors and providers.tf. Both lxc and machines default to {} so a node
-# can be declared with only one type of workload.
+# LXC, VM and Flatcar VM definitions per hypervisor, keyed by the same names
+# used in hypervisors and providers.tf. All three maps default to {} so a node
+# can be declared with any subset of workload types.
 variable "nodes" {
   type = map(object({
     lxc = optional(map(object({
@@ -144,6 +144,43 @@ variable "nodes" {
       machine    = string
       bridge     = string
     })), {})
+    flatcar = optional(map(object({
+      hostname    = string
+      vmid        = number
+      ip          = string
+      gw          = optional(string)
+      vlan        = optional(number, 0)
+      bridge      = optional(string, "vmbr0")
+      onboot      = optional(bool, true)
+      tags        = optional(string, "")
+      cores       = optional(number, 2)
+      cpu_type    = optional(string, "x86-64-v2-AES")
+      memory      = optional(number, 4096)
+      disk_size   = optional(number, 32)
+      butane      = optional(string) # inline Butane YAML
+      butane_file = optional(string) # path relative to this directory
+    })), {})
   }))
   default = {}
+}
+
+# Flatcar release imported onto every node that runs Flatcar VMs. Pin a version
+# and copy its sha512 from the image's .DIGESTS file; see opentofu/README.md.
+variable "flatcar_image" {
+  type = object({
+    channel   = optional(string, "stable")
+    version   = string
+    sha512    = string
+    datastore = optional(string, "local")
+  })
+  default = {
+    version = "4593.2.5"
+    sha512  = "21fdba07ffc73aac80aa40f1f99e0460e2d53b1c2815a774d5e2940d2b5cfa78fb2c86391fbf3bb76e28e8ece1ca41333f30ce18d1dd3f0c016e95bed120aba8"
+  }
+}
+
+variable "snippets_datastore" {
+  description = "Datastore holding Ignition snippets for Flatcar VMs. Needs the snippets content type enabled on every node."
+  type        = string
+  default     = "local"
 }

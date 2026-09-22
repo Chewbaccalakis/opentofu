@@ -18,6 +18,13 @@ all:
               ansible_host: ${host.ip}
               vmid: ${host.vmid}
 %{ endfor ~}
+        ${hv_name}_flatcar:
+          hosts:
+%{ for host in hv.flatcar ~}
+            ${host.name}:
+              ansible_host: ${host.ip}
+              vmid: ${host.vmid}
+%{ endfor ~}
 %{ endfor ~}
 
     lxc:
@@ -30,6 +37,12 @@ all:
       children:
 %{ for hv_name, _ in hypervisors ~}
         ${hv_name}_vm:
+%{ endfor ~}
+    # Flatcar has no Python, so only raw/script tasks work here.
+    flatcar:
+      children:
+%{ for hv_name, _ in hypervisors ~}
+        ${hv_name}_flatcar:
 %{ endfor ~}
 
 %{ for tag, hosts in tag_groups ~}

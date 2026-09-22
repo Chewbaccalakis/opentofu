@@ -8,6 +8,11 @@ terraform {
       source  = "hashicorp/local"
       version = "~> 2.2"
     }
+    # Butane -> Ignition transpiler for Flatcar VMs (no provider config needed).
+    ct = {
+      source  = "poseidon/ct"
+      version = "~> 0.14"
+    }
     technitium = {
       source  = "kenske/technitium"
       version = "~> 0.2"
@@ -72,4 +77,17 @@ provider "proxmox" {
   endpoint  = var.hypervisors["hv1"].api_url
   api_token = "${data.external.infisical.result["token_id"]}=${data.external.infisical.result["hv1_token_secret"]}"
   insecure  = true
+
+  # SSH is only used to upload Ignition snippets for Flatcar VMs (Proxmox has
+  # no API for snippets). Requires the ansible public key in root's
+  # authorized_keys on the node; see flatcar-todo.md.
+  ssh {
+    username    = "root"
+    private_key = base64decode(data.external.infisical.result["ssh_private_key_b64"])
+
+    node {
+      name    = var.hypervisors["hv1"].node_name
+      address = regex("^https?://([^:/]+)", var.hypervisors["hv1"].api_url)[0]
+    }
+  }
 }
