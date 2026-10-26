@@ -16,7 +16,7 @@ variable "lxc" {
     unprivileged = bool
     onboot       = bool
     tags         = string
-    cores        = optional(number, 1)
+    cores        = optional(number, 1) # 0 = no core limit, CPU left unmanaged
     memory       = number
     swap         = number
     disk_size    = string
@@ -26,6 +26,20 @@ variable "lxc" {
     ip           = string
     nameserver   = optional(string)
     gw           = string
+    # Extra mount points, e.g. host bind mounts. Proxmox only lets root@pam
+    # create or change bind mounts, so declare existing ones to adopt them
+    # rather than to add new ones through an API token.
+    mount_points = optional(list(object({
+      volume    = string # storage volume, or a host path for a bind mount
+      path      = string # mount path inside the container
+      size      = optional(string)
+      read_only = optional(bool, false)
+      backup    = optional(bool, false)
+      replicate = optional(bool, true)
+      acl       = optional(bool, false)
+      quota     = optional(bool, false)
+      shared    = optional(bool, false)
+    })), [])
     # Optional second NIC, e.g. for a separate VLAN/subnet. `ip` is a full
     # CIDR address (matches the primary `ip` field's format).
     nic2 = optional(object({
@@ -61,6 +75,13 @@ variable "machines" {
     bios       = string
     machine    = string
     bridge     = string
+    # Per-VM overrides; the defaults match what the module always set before.
+    description           = optional(string, "")
+    firewall              = optional(bool, false)   # on every NIC
+    efi_pre_enrolled_keys = optional(bool, false)   # ovmf only
+    os_type               = optional(string, "l26") # "" leaves ostype unset
+    storage               = optional(string)        # disk + EFI disk; defaults to var.storage
+    cloudinit_storage     = optional(string)        # defaults to the VM's storage
     # Optional second NIC, e.g. for a separate VLAN/subnet. `ip` is bare
     # (matches the primary `ip` field's format), assumed /24; gateway is only
     # configured if given, since the default route already comes from the

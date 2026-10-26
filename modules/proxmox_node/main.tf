@@ -24,11 +24,16 @@ resource "proxmox_virtual_environment_container" "container" {
 
   # Proxmox reports an unset core limit as 1 and no cpuunits as 1024; declare
   # both so the provider never rewrites them (changing architecture also needs
-  # root@pam, which the API token is not).
-  cpu {
-    architecture = "amd64"
-    cores        = each.value.cores
-    units        = 1024
+  # root@pam, which the API token is not). cores = 0 leaves the CPU settings
+  # unmanaged, for containers without a core limit that the provider imports
+  # with no cpu block.
+  dynamic "cpu" {
+    for_each = each.value.cores > 0 ? [each.value.cores] : []
+    content {
+      architecture = "amd64"
+      cores        = cpu.value
+      units        = 1024
+    }
   }
 
   memory {
@@ -39,6 +44,21 @@ resource "proxmox_virtual_environment_container" "container" {
   disk {
     datastore_id = var.storage
     size         = tonumber(trimsuffix(each.value.disk_size, "G"))
+  }
+
+  dynamic "mount_point" {
+    for_each = each.value.mount_points
+    content {
+      volume    = mount_point.value.volume
+      path      = mount_point.value.path
+      size      = mount_point.value.size
+      read_only = mount_point.value.read_only
+      backup    = mount_point.value.backup
+      replicate = mount_point.value.replicate
+      acl       = mount_point.value.acl
+      quota     = mount_point.value.quota
+      shared    = mount_point.value.shared
+    }
   }
 
   features {
@@ -148,12 +168,13 @@ data "proxmox_virtual_environment_vms" "template" {
 resource "proxmox_virtual_environment_vm" "vm" {
   for_each = var.machines
 
-  node_name = var.node_name
-  name      = each.value.hostname
-  vm_id     = each.value.vmid
-  tags      = local.vm_tags[each.key]
-  on_boot   = each.value.onboot
-  started   = true
+  node_name   = var.node_name
+  name        = each.value.hostname
+  vm_id       = each.value.vmid
+  tags        = local.vm_tags[each.key]
+  description = each.value.description
+  on_boot     = each.value.onboot
+  started     = true
 
   clone {
     vm_id = one(data.proxmox_virtual_environment_vms.template[each.value.template].vms).vm_id
@@ -188,15 +209,16 @@ resource "proxmox_virtual_environment_vm" "vm" {
   dynamic "efi_disk" {
     for_each = each.value.bios == "ovmf" ? [1] : []
     content {
-      datastore_id = var.storage
-      file_format  = "raw"
-      type         = "4m"
+      datastore_id      = coalesce(each.value.storage, var.storage)
+      file_format       = "raw"
+      type              = "4m"
+      pre_enrolled_keys = each.value.efi_pre_enrolled_keys
     }
   }
 
   disk {
     interface    = "virtio0"
-    datastore_id = var.storage
+    datastore_id = coalesce(each.value.storage, var.storage)
     size         = tonumber(each.value.disk_size)
     file_format  = "raw"
     cache        = "writeback"
@@ -206,9 +228,10 @@ resource "proxmox_virtual_environment_vm" "vm" {
   }
 
   network_device {
-    bridge  = each.value.bridge
-    model   = "virtio"
-    vlan_id = each.value.vlan != 0 ? each.value.vlan : null
+    bridge   = each.value.bridge
+    model    = "virtio"
+    vlan_id  = each.value.vlan != 0 ? each.value.vlan : null
+    firewall = each.value.firewall
   }
 
   # Must stay positionally aligned with the ip_config blocks below (netN
@@ -216,9 +239,10 @@ resource "proxmox_virtual_environment_vm" "vm" {
   dynamic "network_device" {
     for_each = each.value.nic2 != null ? [each.value.nic2] : []
     content {
-      bridge  = network_device.value.bridge
-      model   = "virtio"
-      vlan_id = network_device.value.vlan
+      bridge   = network_device.value.bridge
+      model    = "virtio"
+      vlan_id  = network_device.value.vlan
+      firewall = each.value.firewall
     }
   }
 
@@ -226,13 +250,16 @@ resource "proxmox_virtual_environment_vm" "vm" {
     device = "socket"
   }
 
-  operating_system {
-    type = "l26"
+  dynamic "operating_system" {
+    for_each = each.value.os_type != "" ? [each.value.os_type] : []
+    content {
+      type = operating_system.value
+    }
   }
 
   # Cloud-Init
   initialization {
-    datastore_id = var.storage
+    datastore_id = coalesce(each.value.cloudinit_storage, each.value.storage, var.storage)
     interface    = "ide2"
     upgrade      = each.value.ciupgrade
 

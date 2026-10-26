@@ -110,7 +110,7 @@ variable "nodes" {
       unprivileged = bool
       onboot       = bool
       tags         = string
-      cores        = optional(number, 1)
+      cores        = optional(number, 1) # 0 = no core limit, CPU left unmanaged
       memory       = number
       swap         = number
       disk_size    = string
@@ -120,6 +120,17 @@ variable "nodes" {
       ip           = string
       nameserver   = optional(string)
       gw           = string
+      mount_points = optional(list(object({
+        volume    = string
+        path      = string
+        size      = optional(string)
+        read_only = optional(bool, false)
+        backup    = optional(bool, false)
+        replicate = optional(bool, true)
+        acl       = optional(bool, false)
+        quota     = optional(bool, false)
+        shared    = optional(bool, false)
+      })), [])
       nic2 = optional(object({
         nic_name = optional(string, "eth1")
         bridge   = optional(string, "vmbr0")
@@ -149,6 +160,13 @@ variable "nodes" {
       bios       = string
       machine    = string
       bridge     = string
+      # Per-VM overrides; see the module's variables.tf.
+      description           = optional(string, "")
+      firewall              = optional(bool, false)
+      efi_pre_enrolled_keys = optional(bool, false)
+      os_type               = optional(string, "l26") # "" leaves ostype unset
+      storage               = optional(string)
+      cloudinit_storage     = optional(string)
       nic2 = optional(object({
         bridge = optional(string, "vmbr0")
         vlan   = optional(number)
