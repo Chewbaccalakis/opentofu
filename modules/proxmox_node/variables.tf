@@ -123,7 +123,7 @@ variable "ssh_private_key_path" {
 
 # Flatcar Container Linux VMs. These are built from the official Proxmox VE
 # image (not cloned from a template) and provisioned with Ignition, so there is
-# no cloud-init user account and no remote-exec provisioner. Flatcar itself
+# no cloud-init user account; the only provisioner pushes secret_files. Flatcar itself
 # ships no qemu-guest-agent binary (no package manager); see
 # qemu_guest_agent below for a best-effort containerized workaround.
 # Static IP/DNS still come from the cloud-init drive (Afterburn applies them);
@@ -155,6 +155,14 @@ variable "flatcar" {
     # taint the VM (which rebuilds it from the image).
     butane      = optional(string)
     butane_file = optional(string)
+    # Secret files pushed over SSH after the VM boots, kept out of Ignition
+    # (whose rendered snippet sits in plaintext on the node's storage). Maps a
+    # file name under /etc/secrets on the VM to a key in butane_vars. Units
+    # mount /etc/secrets read-only (compose-style, at /run/secrets) and can
+    # wait for /etc/secrets/.pushed, which is written last. secret_units are
+    # try-restarted after every push so they pick up rotated values.
+    secret_files = optional(map(string), {})
+    secret_units = optional(list(string), [])
   }))
   default = {}
 }
@@ -180,6 +188,15 @@ variable "flatcar_image" {
 variable "snippets_datastore" {
   type    = string
   default = "local"
+}
+
+# Docker Hub pull-through cache (e.g. "http://192.168.7.254:5000") written to
+# every Flatcar VM's /etc/docker/daemon.json as a registry mirror. Docker falls
+# back to Docker Hub when the mirror is down. The VM whose IP appears in the
+# URL is skipped, since it hosts the cache. null disables it.
+variable "docker_registry_mirror" {
+  type    = string
+  default = null
 }
 
 # Values available to every butane_file, which is rendered with templatefile().

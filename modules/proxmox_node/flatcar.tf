@@ -18,17 +18,26 @@ locals {
   flatcar_tags = { for k, v in var.flatcar : k => sort(compact(concat(["terraform", "flatcar"], split(";", v.tags)))) }
 
   # Base Butane config: hostname (Afterburn cannot set it because the user-data
-  # is Ignition, not cloud-config) and the ansible user with the shared key.
+  # is Ignition, not cloud-config), the Docker Hub mirror (except on the VM
+  # that hosts it) and the ansible user with the shared key.
   flatcar_base_butane = {
     for k, v in var.flatcar : k => yamlencode({
       variant = "flatcar"
       version = "1.0.0"
       storage = {
-        files = [{
+        files = concat([{
           path     = "/etc/hostname"
           mode     = 420 # 0644
           contents = { inline = v.hostname }
-        }]
+          }],
+          var.docker_registry_mirror != null && !strcontains(coalesce(var.docker_registry_mirror, "-"), "//${v.ip}:") ? [{
+            path = "/etc/docker/daemon.json"
+            mode = 420 # 0644
+            contents = { inline = jsonencode({
+              "registry-mirrors"    = [var.docker_registry_mirror]
+              "insecure-registries" = [regex("//([^/]+)", var.docker_registry_mirror)[0]]
+            }) }
+        }] : [])
       }
       passwd = {
         users = [
@@ -175,5 +184,62 @@ resource "proxmox_virtual_environment_vm" "flatcar" {
       # must not touch existing VMs.
       disk[0].import_from,
     ]
+  }
+}
+
+# Pushes each VM's secret_files to /etc/secrets over SSH as the ansible user,
+# so secrets reach the VM from the secret store via tofu without passing
+# through Ignition. Re-runs when a value changes (the trigger is a hash; the
+# values themselves are already in state through the root module's secret
+# data source) and whenever the VM is replaced, since a rebuilt disk starts
+# empty.
+#
+# Provisioners cannot loop, so the files travel as one generated script:
+# values are base64-encoded (no quoting to get wrong), uploaded into a 0700
+# directory, run under sudo, then deleted. Each file is written then renamed,
+# and .pushed last, so a unit waiting on .pushed never sees a partial set.
+resource "terraform_data" "flatcar_secrets" {
+  for_each = { for k, v in var.flatcar : k => v if length(v.secret_files) > 0 }
+
+  triggers_replace = sha256(jsonencode({
+    files = { for name, key in each.value.secret_files : name => var.butane_vars[key] }
+    units = each.value.secret_units
+  }))
+
+  connection {
+    type        = "ssh"
+    host        = each.value.ip
+    user        = var.ansible_user
+    private_key = file(var.ssh_private_key_path)
+    # First boot (Ignition, then sshd) can take a while after the VM resource
+    # reports created.
+    timeout = "10m"
+  }
+
+  provisioner "remote-exec" {
+    inline = ["install -d -m 0700 /home/${var.ansible_user}/.secrets-push"]
+  }
+
+  provisioner "file" {
+    destination = "/home/${var.ansible_user}/.secrets-push/push.sh"
+    content = join("\n", concat(
+      ["set -eu", "umask 077", "install -d -m 0700 /etc/secrets"],
+      [for name, key in each.value.secret_files :
+        "printf '%s' '${base64encode(var.butane_vars[key])}' | base64 -d > '/etc/secrets/.${name}.tmp' && mv -f '/etc/secrets/.${name}.tmp' '/etc/secrets/${name}'"
+      ],
+      ["touch /etc/secrets/.pushed"],
+      [for u in each.value.secret_units : "systemctl try-restart '${u}'"],
+      [""],
+    ))
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo sh /home/${var.ansible_user}/.secrets-push/push.sh; rc=$?; rm -rf /home/${var.ansible_user}/.secrets-push; exit $rc",
+    ]
+  }
+
+  lifecycle {
+    replace_triggered_by = [proxmox_virtual_environment_vm.flatcar[each.key]]
   }
 }
